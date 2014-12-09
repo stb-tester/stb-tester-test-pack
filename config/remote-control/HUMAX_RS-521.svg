@@ -57,8 +57,8 @@
    ry="48.879505" /><g
    id="g27438943"
    transform="translate(-36.26544,0.63070635)"
-   key="DIKI_KP_1"
-   inkscape:label="#DIKI_KP_1"
+   key="KEY_1"
+   inkscape:label="#KEY_1"
    class="key"><path
    transform="matrix(0.8,0,0,-0.8,35.758135,841.88976)"
    d="m 343.33911,226.92924 a 16.161772,16.161772 0 1 1 -32.32354,0 16.161772,16.161772 0 1 1 32.32354,0 z"
@@ -66,7 +66,7 @@
    sodipodi:rx="16.161772"
    sodipodi:cy="226.92924"
    sodipodi:cx="327.17734"
-   id="DIKI_KP_1"
+   id="KEY_1"
    style="fill:#000000;fill-rule:evenodd;stroke:#ffffff;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
    sodipodi:type="arc"
    inkscape:label="#path3020" /><text
@@ -102,7 +102,7 @@
 </g><g
    transform="translate(6.149363,0.63070635)"
    id="g3821"
-   key="DIKI_KP_2"
+   key="KEY_2"
    class="key"><path
    sodipodi:type="arc"
    style="fill:#000000;fill-rule:evenodd;stroke:#ffffff;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
@@ -145,7 +145,7 @@
 </g><g
    id="g3833"
    transform="translate(48.564154,0.63070635)"
-   key="DIKI_KP_3"
+   key="KEY_3"
    class="key"><path
    transform="matrix(0.8,0,0,-0.8,35.758135,841.88976)"
    d="m 343.33911,226.92924 a 16.161772,16.161772 0 1 1 -32.32354,0 16.161772,16.161772 0 1 1 32.32354,0 z"
@@ -188,7 +188,7 @@
 </g><g
    transform="translate(-36.265439,-34.898917)"
    id="g3925"
-   key="DIKI_KP_4"
+   key="KEY_4"
    class="key"><path
    sodipodi:type="arc"
    style="fill:#000000;fill-rule:evenodd;stroke:#ffffff;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
@@ -231,7 +231,7 @@
 </g><g
    id="g3937"
    transform="translate(6.149363,-34.898917)"
-   key="DIKI_KP_5"
+   key="KEY_5"
    class="key"><path
    transform="matrix(0.8,0,0,-0.8,35.758135,841.88976)"
    d="m 343.33911,226.92924 a 16.161772,16.161772 0 1 1 -32.32354,0 16.161772,16.161772 0 1 1 32.32354,0 z"
@@ -274,7 +274,7 @@
 </g><g
    transform="translate(48.564154,-34.898917)"
    id="g3949"
-   key="DIKI_KP_6"
+   key="KEY_6"
    class="key"><path
    sodipodi:type="arc"
    style="fill:#000000;fill-rule:evenodd;stroke:#ffffff;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
@@ -317,7 +317,7 @@
 </g><g
    id="g3961"
    transform="translate(-36.265439,-70.42853)"
-   key="DIKI_KP_7"
+   key="KEY_7"
    class="key"><path
    transform="matrix(0.8,0,0,-0.8,35.758135,841.88976)"
    d="m 343.33911,226.92924 a 16.161772,16.161772 0 1 1 -32.32354,0 16.161772,16.161772 0 1 1 32.32354,0 z"
@@ -360,7 +360,7 @@
 </g><g
    transform="translate(6.149363,-70.42853)"
    id="g3973"
-   key="DIKI_KP_8"
+   key="KEY_8"
    class="key"><path
    sodipodi:type="arc"
    style="fill:#000000;fill-rule:evenodd;stroke:#ffffff;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
@@ -403,7 +403,7 @@
 </g><g
    id="g3985"
    transform="translate(48.564154,-70.42853)"
-   key="DIKI_KP_9"
+   key="KEY_9"
    class="key"><path
    transform="matrix(0.8,0,0,-0.8,35.758135,841.88976)"
    d="m 343.33911,226.92924 a 16.161772,16.161772 0 1 1 -32.32354,0 16.161772,16.161772 0 1 1 32.32354,0 z"
@@ -488,7 +488,7 @@
 </g><g
    id="g4009"
    transform="translate(6.149363,-105.95815)"
-   key="DIKI_KP_0"
+   key="KEY_0"
    class="key"><path
    transform="matrix(0.8,0,0,-0.8,35.758135,841.88976)"
    d="m 343.33911,226.92924 a 16.161772,16.161772 0 1 1 -32.32354,0 16.161772,16.161772 0 1 1 32.32354,0 z"

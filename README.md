@@ -25,6 +25,8 @@ It consists of:
    control.  This is a standard SVG which can be created using [inkscape], but
    with additional XML attributes.  Add the `key="KEY_NAME"` and `class="key"`
    attributes to the SVG elements which correspond to a particular key.
+   stb-tester uses standard Linux key names such as `KEY_A`, `KEY_FASTFORWARD`,
+   etc.  For a full list see [linux/input.h].
 
 You can choose between different remote controls based on the filename you
 choose.  Once you have added your own controls you can delete the examples from
@@ -33,6 +35,7 @@ the `config/remote-control` directory.
 [redrat]: http://www.redrat.co.uk/products/index.html
 [irdb]: http://www.redrat.co.uk/software/SignalDBUtil/index.html
 [inkscape]: http://www.inkscape.org/
+[linux/input.h]: http://lxr.free-electrons.com/source/include/linux/input.h
 
 Choosing the stb-tester version to use
 --------------------------------------
