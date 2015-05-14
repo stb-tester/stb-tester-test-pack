@@ -19,3 +19,8 @@ def test_read_menu():
     stbt.press('KEY_MENU')
     sleep(1)
     print stbt.ocr()
+
+
+def test_that_roku_home_says_streaming_channels():
+    stbt.press('KEY_HOME')
+    assert stbt.wait_until(lambda: stbt.match_text("Streaming Channels"))
