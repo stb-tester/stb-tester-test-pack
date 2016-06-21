@@ -337,7 +337,7 @@ def main(argv):
 
             To update stbt-docker run the following command:
 
-                curl -f -o {argv0} https://github.com/stb-tester/stbt-docker/raw/master/stbt-docker
+                curl -f -o {argv0} https://raw.githubusercontent.com/stb-tester/stbt-docker/master/stbt-docker
 
             """).format(v=stbt_version, argv0=argv[0]))
         return 1
