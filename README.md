@@ -13,7 +13,7 @@ written your own tests.
 
 See the [stb-tester ONE manual][write-a-new-test-case] for more help.
 
-[write-a-new-test-case]: http://stb-tester.com/stb-tester-one/rev2015.1/getting-started#write-a-new-test-case
+[write-a-new-test-case]: http://stb-tester.com/manual/getting-started#write-a-new-test-case
 
 Remote-control configuration
 ----------------------------
@@ -24,7 +24,7 @@ directory. See the [stb-tester ONE manual][configuration-files] for details.
 Once you have added your own remote control configurations you can delete the
 examples from the `config/remote-control` directory.
 
-[configuration-files]: http://stb-tester.com/stb-tester-one/rev2015.1/advanced-configuration#configuration-files
+[configuration-files]: http://stb-tester.com/manual/advanced-configuration#configuration-files
 
 Choosing the stb-tester version to use
 --------------------------------------
@@ -35,4 +35,4 @@ is available and you want to upgrade update the configuration key
 `test_pack.stbt_version` in `config/stbt.conf`. See the
 [stb-tester ONE manual][stbt-conf] for details.
 
-[stbt-conf]: http://stb-tester.com/stb-tester-one/rev2015.1/advanced-configuration#stbt-conf
+[stbt-conf]: http://stb-tester.com/manual/advanced-configuration#stbt-conf
