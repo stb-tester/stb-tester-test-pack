@@ -212,7 +212,7 @@ class DockerNotInstalledError(RuntimeError):
 
 
 def build_docker_image(test_pack, stbt_version):
-    base_image = "stbtester/stbt-one-test-pack-base-%s:v27.3" % stbt_version
+    base_image = "stbtester/stbt-one-test-pack-base-%s:v27.4" % stbt_version
     try:
         with open(os.path.join(test_pack, 'config/setup/setup')) as f:
             setup = f.read()
@@ -385,6 +385,8 @@ def main(argv):
          mkdir -p /run/user/{uid} &&
          chown -R {uid}:{gid} /run/user/{uid} &&
          chmod 0700 /run/user/{uid} &&
+         {{ [ -e /dev/raw1394 ] || grep -q devtmpfs /proc/mounts ||
+             ln -s /dev/null /dev/raw1394 || true; }} &&
          cd {cwd} &&
          sudo -u stb-tester -E -- \\
              env STBT_CONFIG_FILE=/var/lib/stbt/test-pack/{config_filename} \\
