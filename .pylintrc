@@ -1,0 +1,8 @@
+[MASTER]
+persistent=no
+extension-pkg-whitelist=cv2
+
+[REPORTS]
+msg-template={path}:{line}:{column}: [{msg_id}({symbol}), {obj}] {msg}
+output-format=colorized
+reports=no
