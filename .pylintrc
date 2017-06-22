@@ -6,3 +6,42 @@ extension-pkg-whitelist=cv2
 msg-template={path}:{line}:{column}: [{msg_id}({symbol}), {obj}] {msg}
 output-format=colorized
 reports=no
+
+[MESSAGES CONTROL]
+disable=
+  bad-classmethod-argument,
+  bad-continuation,
+  bad-mcs-method-argument,
+  bad-option-value,
+  blacklisted-name,
+  duplicate-code,
+  empty-docstring,
+  global-statement,
+  invalid-name,
+  locally-disabled,
+  locally-enabled,
+  misplaced-comparison-constant,
+  missing-docstring,
+  multiple-statements,
+  no-init,
+  no-self-use,
+  singleton-comparison,
+  too-few-public-methods,
+  too-many-ancestors,
+  too-many-arguments,
+  too-many-boolean-expressions,
+  too-many-branches,
+  too-many-instance-attributes,
+  too-many-lines,
+  too-many-locals,
+  too-many-public-methods,
+  too-many-return-statements,
+  too-many-statements,
+  wrong-import-position,
+
+[VARIABLES]
+dummy-variables-rgx=_
+
+[FORMAT]
+max-line-length=80
+ignore-long-lines=https?://
