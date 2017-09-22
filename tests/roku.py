@@ -1,4 +1,4 @@
-from stbt import match, match_text, press, wait_until
+from stbt import match, press, wait_until
 
 
 def test_that_roku_home_shows_netflix_player():
