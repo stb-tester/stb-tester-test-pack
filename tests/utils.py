@@ -27,7 +27,7 @@ def find_selection_horizontal_repeat(
 
     Example::
 
-        >>> frame = load_image("selftest-screenshots/roku-home.png")
+        >>> frame = load_image("../selftest/screenshots/roku-home.png")
         >>> find_selection_horizontal_repeat(
         ...     frame, "images/roku-menu-selection-background.png")
         Selection(region=Region(x=116, y=157, right=483, bottom=208),
