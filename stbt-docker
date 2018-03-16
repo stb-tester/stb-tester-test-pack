@@ -99,7 +99,17 @@ from cStringIO import StringIO
 from textwrap import dedent
 
 DOCKER = shlex.split(os.environ.get("DOCKER", "docker"))
-STBT_VERSION_WHITELIST = {"0.21", "22", "23", "24", "25", "26", "27"}
+
+BASE_IMAGES = {
+    "0.21": "stbtester/stbt-one-test-pack-base-0.21:v27.4",
+    "22": "stbtester/stbt-one-test-pack-base-22:v27.4",
+    "23": "stbtester/stbt-one-test-pack-base-23:v27.4",
+    "24": "stbtester/stbt-one-test-pack-base-24:v27.4",
+    "25": "stbtester/stbt-one-test-pack-base-25:v27.4",
+    "26": "stbtester/stbt-one-test-pack-base-26:v27.4",
+    "27": "stbtester/stbt-one-test-pack-base-27:v27.4",
+    "28": "stbtester/stbt-docker-28:a3d42b4c483c275767e8adfef97af8c291e7682d",
+}
 
 
 def which_docker_container_am_i_running_in():
@@ -119,6 +129,13 @@ def native_to_unix_path(path):
         return path.replace("\\", "/")
     else:
         return path
+
+
+def list_mounts(container):
+    for x in container.get('Mounts', []):
+        yield x
+    for k, v in container.get('Volumes', {}).items():
+        yield {'Destination': k, 'Source': v}
 
 
 def container_to_host_path(path):
@@ -165,11 +182,11 @@ def container_to_host_path(path):
         this_container = json.loads(subprocess.check_output(
             DOCKER + ['inspect', container]))[0]
         best_match = None
-        for cpath, hpath in this_container['Volumes'].items():
-            rel = os.path.relpath(path, cpath)
+        for mount in list_mounts(this_container):
+            rel = os.path.relpath(path, mount['Destination'])
             if '..' not in rel:
                 if best_match is None or len(rel) < len(best_match[1]):
-                    best_match = (hpath, rel)
+                    best_match = (mount['Source'], rel)
         if best_match:
             return os.path.join(*best_match)
         else:
@@ -212,7 +229,11 @@ class DockerNotInstalledError(RuntimeError):
 
 
 def build_docker_image(test_pack, stbt_version):
-    base_image = "stbtester/stbt-one-test-pack-base-%s:v27.4" % stbt_version
+    if "STBT_DOCKER_TEST_IMAGE" in os.environ:
+        base_image = os.environ["STBT_DOCKER_TEST_IMAGE"]
+    else:
+        base_image = BASE_IMAGES[stbt_version]
+
     try:
         with open(os.path.join(test_pack, 'config/setup/setup')) as f:
             setup = f.read()
@@ -331,7 +352,7 @@ def main(argv):
 
     config_filename, config = read_stbt_conf(root)
     stbt_version = config.get('test_pack', 'stbt_version')
-    if stbt_version not in STBT_VERSION_WHITELIST:
+    if stbt_version not in BASE_IMAGES:
         sys.stderr.write(dedent("""\
             error: This version of stbt-docker does not support stbt_version {v}.
 
@@ -374,6 +395,7 @@ def main(argv):
     cmdline = (
         DOCKER +
         ['run', '-i', '--rm', '-u', '0:0',
+         '--entrypoint=/usr/libexec/stbt/test-pack-entrypoint.sh',
          '-v', '%s:/var/lib/stbt/.cache' % cache_volume,
          '-v', '%s:/var/lib/stbt/test-pack' % container_to_host_path(root)]
         + tty_arg + shlex.split(os.environ.get('DOCKER_OPTS', '')) +
