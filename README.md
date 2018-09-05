@@ -1,38 +1,34 @@
 Test-pack
 =========
 
-This is an Stb-tester test-pack suitable for running on the Stb-tester
-appliances.
+This is an Stb-tester test-pack suitable for running on the
+[Stb-tester Platform].
 
 Writing tests
 -------------
 
-Tests should be put in the `tests/` directory where they will be found by the
-test-runner.  There is an example in there which may be deleted once you have
+Tests are Python functions in files under the `tests/` directory. See
+`tests/roku.py` for some examples — feel free to delete it once you have
 written your own tests.
 
-See ["Write a new test case"] in the Stb-tester manual for more help.
-
-["Write a new test case"]: http://stb-tester.com/manual/getting-started#write-a-new-test-case
-
-Remote-control configuration
-----------------------------
-
-Infrared remote control configuration belongs in the `config/remote-control/`
-directory. See ["Configuration files"] in the Stb-tester manual for details.
-
-Once you have added your own remote control configurations you can delete the
-examples from the `config/remote-control/` directory.
-
-["Configuration files"]: http://stb-tester.com/manual/advanced-configuration#configuration-files
+See [Getting Started] in the Stb-tester manual for more help.
 
 Choosing the stb-tester version to use
 --------------------------------------
 
-Stb-tester test-packs put you in control of which version of the Stb-tester
-Python API to use, allowing you to upgrade to new releases in a controlled
-manner. When a new version of Stb-tester is available, update the configuration
-key `test_pack.stbt_version` in `config/stbt.conf`. See the
-[Stb-tester manual][stbt-conf] for details.
+Changes to the `stbt` core Python API are version-controlled. You can specify
+the version you want to use in `config/stbt.conf`. See
+[`test_pack.stbt_version`][stbt-conf] in the the Stb-tester manual's
+Configuration Reference.
 
-[stbt-conf]: http://stb-tester.com/manual/advanced-configuration#stbt-conf
+We generally expect that upgrading to new versions will be safe; we strive to
+maintain backwards compatibility. But there may be some edge cases that affect
+some users, so this mechanism allows you to upgrade in a controlled manner, and
+to test the upgrade on a branch first. Any incompatible changes are documented
+in the [Release notes].
+
+
+[Stb-tester Platform]: https://stb-tester.com/solutions
+[Getting Started]: https://stb-tester.com/manual/getting-started#writing-testcases
+[stbt-conf]: https://stb-tester.com/manual/advanced-configuration#stbt-conf
+[Release notes]: https://stb-tester.com/manual/python-api#release-notes

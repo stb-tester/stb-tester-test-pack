@@ -10,7 +10,7 @@
 # self-contained and relocatable so it can be deployed as a single file with no
 # dependency on anything else in stbt.
 #
-# Copyright (c) 2015-2016 stb-tester.com Ltd.
+# Copyright (c) 2015-2018 Stb-tester.com Ltd.
 #
 # stbt-docker is released under the MIT License:
 #
@@ -109,6 +109,7 @@ BASE_IMAGES = {
     "26": "stbtester/stbt-one-test-pack-base-26:v27.4",
     "27": "stbtester/stbt-one-test-pack-base-27:v27.4",
     "28": "stbtester/stbt-docker-28:a3d42b4c483c275767e8adfef97af8c291e7682d",
+    "29": "stbtester/stbt-docker-29:40f62a9b23b4217d0ea2626606db757e8c02ac77",
 }
 
 
@@ -352,7 +353,8 @@ def main(argv):
 
     config_filename, config = read_stbt_conf(root)
     stbt_version = config.get('test_pack', 'stbt_version')
-    if stbt_version not in BASE_IMAGES:
+    if stbt_version not in BASE_IMAGES and \
+            "STBT_DOCKER_TEST_IMAGE" not in os.environ:
         sys.stderr.write(dedent("""\
             error: This version of stbt-docker does not support stbt_version {v}.
 
