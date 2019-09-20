@@ -6,12 +6,14 @@
 For more details, and to get the latest version of this script, see
 <https://github.com/stb-tester/stbt-rig>.
 
-Copyright 2017-2018 Stb-tester.com Ltd. <support@stb-tester.com>
+Copyright 2017-2019 Stb-tester.com Ltd. <support@stb-tester.com>
 Released under the MIT license.
 """
 
+from __future__ import (
+    absolute_import, division, print_function, unicode_literals)
+
 import argparse
-import ConfigParser
 import itertools
 import logging
 import os
@@ -28,6 +30,12 @@ from textwrap import dedent
 
 # Third-party libraries. Keep this list to a minimum to ease deployment.
 import requests
+
+try:
+    import configparser
+except ImportError:
+    # Python 2
+    import ConfigParser as configparser
 
 try:
     # Bash tab-completion, if python-argcomplete is installed
@@ -74,7 +82,7 @@ def resolve_args(args):
         try:
             _, config_parser = read_stbt_conf(find_test_pack_root())
             args.portal_url = config_parser.get('test_pack', 'portal_url')
-        except ConfigParser.Error as e:
+        except configparser.Error as e:
             die("--portal-url isn't specified on the command line and "
                 "test_pack.portal_url isn't specified in .stbt.conf: %s", e)
 
@@ -148,8 +156,8 @@ def _list_node_ids(**_kwargs):
     """
 
     return [f[17:-5]
-            for f in subprocess.check_output(
-                ["git", "ls-files", "config/test-farm/stb-tester-*.conf"])
+            for f in to_unicode(subprocess.check_output(
+                ["git", "ls-files", "config/test-farm/stb-tester-*.conf"]))
             .strip().split("\n")]
 
 
@@ -169,8 +177,8 @@ def _list_test_cases(prefix, **_kwargs):
     else:
         # List files:
         return [f + "::"
-                for f in subprocess.check_output(
-                    ["git", "ls-files", "tests/**.py"]).strip().split("\n")]
+                for f in to_unicode(subprocess.check_output(
+                    ["git", "ls-files", "tests/**.py"])).strip().split("\n")]
 
 
 ARGPARSE_EPILOGUE = dedent("""\
@@ -374,7 +382,7 @@ def argparser():
 
 
 def _exit(signo, _):
-    name = next(k for k, v in signal.__dict__.iteritems()
+    name = next(k for k, v in signal.__dict__.items()
                 if v == signo and "_" not in k)
     logger.warning("Received %s. Stopping job.", name)
     # Teardown is handled by TestJob.__exit__
@@ -386,8 +394,7 @@ def cmd_run(args, node):
     return cmd_run_body(args, node, j)
 
 
-JobPrepResult = namedtuple(
-    "JobPrepResult", "branch_name commit_sha category tags")
+JobPrepResult = namedtuple("JobPrepResult", "commit_sha category tags")
 
 
 def cmd_run_prep(args, portal):
@@ -397,9 +404,12 @@ def cmd_run_prep(args, portal):
     if args.test_pack_revision:
         commit_sha = args.test_pack_revision
     else:
-        if args.mode in ["interactive", "pytest"]:
+        if args.mode == "interactive":
             commit_sha = TestPack(remote=args.git_remote) \
                          .push_git_snapshot(branch_name)
+        elif args.mode == "pytest":
+            commit_sha = TestPack(remote=args.git_remote) \
+                         .push_git_snapshot(branch_name, interactive=False)
         elif args.mode in ["bamboo", "jenkins"]:
             # We assume that when in CI we're not in the git repo of the
             # test-pack, so run tests from master.
@@ -452,7 +462,7 @@ def cmd_run_prep(args, portal):
             die("Duplicate --tag name: %s" % name)
         tags[name] = value
 
-    return JobPrepResult(branch_name, commit_sha, category, tags)
+    return JobPrepResult(commit_sha, category, tags)
 
 
 def cmd_run_body(args, node, j):
@@ -467,14 +477,19 @@ def cmd_run_body(args, node, j):
 
     job = node.run_tests(
         j.commit_sha, test_cases, args.remote_control, j.category,
-        args.soak, args.shuffle, j.tags, args.force, await_completion=True)
+        args.soak, args.shuffle, j.tags, args.force)
+
+    try:
+        job.await_completion()
+    except SystemExit:  # raised by our signal handler
+        job.stop()
 
     results = job.list_results()
 
     if args.mode in ["interactive", 'pytest']:
         for result in results:
-            print ""
-            print result.json["triage_url"]
+            print("")
+            print(result.json["triage_url"])
             result.print_logs()
     elif args.mode in ["bamboo", "jenkins"]:
         # Record results in XML format for the Jenkins JUnit plugin
@@ -487,8 +502,8 @@ def cmd_run_body(args, node, j):
         with open(args.csv, "w") as f:
             f.write(results_csv)
 
-    print "View these test results at: %s/app/#/results?filter=job:%s" % (
-        node.portal.url(), job.job_uid)
+    print("View these test results at: %s/app/#/results?filter=job:%s" % (
+        node.portal.url(), job.job_uid))
 
     if args.mode == "pytest":
         for result in results:
@@ -527,7 +542,12 @@ def find_test_pack_root():
     containing .stbt.conf
     """
     root = os.getcwd()
-    while root != '/':
+
+    # This gets the toplevel in a cross-platform manner "/" on UNIX and
+    # (typically) "c:\" on Windows:
+    toplevel = os.path.abspath(os.sep)
+
+    while root != toplevel:
         if os.path.exists(os.path.join(root, '.stbt.conf')):
             return root
         root = os.path.split(root)[0]
@@ -579,7 +599,14 @@ def iter_portal_auth_tokens(portal_url, portal_auth_file, mode):
 
     while True:
         sys.stderr.write('Enter Access Token for portal %s: ' % portal_url)
-        token = sys.stdin.readline().strip()
+        sys.stderr.flush()
+        token = sys.stdin.readline()
+        if not token:
+            # EOF
+            sys.stderr.write("EOF!\n")
+            sys.stderr.flush()
+            break
+        token = token.strip()
         if token:
             if keyring is not None:
                 keyring.set_password(portal_url, "", token)
@@ -596,13 +623,13 @@ def read_stbt_conf(root):
     traverse them for the purposes of loading .stbt.conf.
     """
     root = os.path.abspath(root)
-    cp = ConfigParser.SafeConfigParser()
+    cp = configparser.SafeConfigParser()
     filename = os.path.join(root, '.stbt.conf')
     for _ in range(10):
         try:
             cp.read(filename)
             return os.path.relpath(filename, root), cp
-        except ConfigParser.MissingSectionHeaderError:
+        except configparser.MissingSectionHeaderError:
             if os.name == "posix":
                 # POSIX systems can support symlinks so something else must have
                 # gone wrong.
@@ -638,7 +665,7 @@ class Result(object):
         response = self._portal._get(
             '/api/v2/results%s/stbt.log' % self.json['result_id'])
         response.raise_for_status()
-        stream.write(response.content)
+        stream.write(response.text)
 
     def is_ok(self):
         return self.json['result'] == "pass"
@@ -680,7 +707,7 @@ class TestJob(object):
 
     def stop(self):
         if self.get_status() != TestJob.EXITED:
-            self._post('/stop').raise_for_status()
+            self._post('/stop', retry=True).raise_for_status()
 
     def await_completion(self, timeout=None):
         if timeout is None:
@@ -691,12 +718,13 @@ class TestJob(object):
             if time.time() > end_time:
                 raise TimeoutException(
                     "Timeout waiting for job %s to complete" % self.job_uid)
-            if self.get_status() != TestJob.RUNNING:
+            if self.get_status(timeout=min(end_time - time.time(), 600)) != \
+                    TestJob.RUNNING:
                 logger.debug("Job complete %s", self.job_uid)
                 return
             try:
                 self._get('/await_completion',
-                          timeout=min(end_time - time.time(), 60))
+                          timeout=min(end_time - time.time(), 600))
             except requests.exceptions.Timeout:
                 pass
 
@@ -710,20 +738,20 @@ class TestJob(object):
         r = self.portal._get(
             '/api/v2/results.xml', params={'filter': 'job:%s' % self.job_uid})
         r.raise_for_status()
-        return r.content
+        return r.text
 
     def list_results_csv(self):
         r = self.portal._get(
             '/api/v2/results.csv', params={'filter': 'job:%s' % self.job_uid})
         r.raise_for_status()
-        return r.content
+        return r.text
 
-    def get_status(self):
+    def get_status(self, timeout=60):
         if self._json.get('status') == 'exited':
             # If we were "exited" in the past, then we'll still be "exited" now:
             # Save making another HTTP request
             return TestJob.EXITED
-        self._update()
+        self._json = self._get(timeout=timeout).json()
         return self._json['status']
 
     def _get(self, path="", **kwargs):
@@ -737,9 +765,6 @@ class TestJob(object):
             '/api/v2/jobs%s%s' % (self.job_uid, path), **kwargs)
         r.raise_for_status()
         return r
-
-    def _update(self):
-        self._json = self._get().json()
 
 
 class TimeoutException(RuntimeError):
@@ -774,7 +799,7 @@ class Node(object):
     def save_screenshot(self, filename):
         r = self._get("screenshot.png")
         r.raise_for_status()
-        with open(filename, 'w') as f:
+        with open(filename, 'wb') as f:
             f.write(r.content)
 
     def _get(self, suffix="", **kwargs):
@@ -789,10 +814,14 @@ class Node(object):
 class Portal(object):
     def __init__(self, url, auth_token, readonly=False):
         self._url = url
-        self._auth_token = auth_token
         self.readonly = readonly
-        self._session = requests.session()
-        self._session.headers.update({"User-Agent": "stbt-rig"})
+
+        session = requests.session()
+        session.headers.update({
+            "Authorization": "token %s" % auth_token,
+            "User-Agent": "stbt-rig"})
+        self._session = RetrySession(
+            timeout=1e9, session=session, logger=logger)
 
     def url(self, endpoint=""):
         if endpoint.startswith(self._url):
@@ -838,17 +867,13 @@ class Portal(object):
             job.await_completion(timeout=timeout)
             return job
 
-    def _get(self, endpoint, headers=None, **kwargs):
-        if headers is None:
-            headers = {}
-        headers["Authorization"] = "token %s" % self._auth_token
-        return self._session.get(self.url(endpoint), headers=headers, **kwargs)
+    def _get(self, endpoint, timeout=60, **kwargs):
+        return self._session.get(self.url(endpoint), timeout=timeout, **kwargs)
 
-    def _post(self, endpoint, json=None, headers=None, **kwargs):  # pylint:disable=redefined-outer-name
+    def _post(self, endpoint, json=None, headers=None, timeout=60, **kwargs):  # pylint:disable=redefined-outer-name
         from json import dumps
         if headers is None:
             headers = {}
-        headers["Authorization"] = "token %s" % self._auth_token
         if self.readonly:
             raise RuntimeError(
                 "Not allowed to mutate this TestRunner, please use a different "
@@ -856,7 +881,8 @@ class Portal(object):
         if json is not None:
             headers['Content-Type'] = 'application/json'
             kwargs['data'] = dumps(json)
-        r = self._session.post(self.url(endpoint), headers=headers, **kwargs)
+        r = self._session.post(
+            self.url(endpoint), headers=headers, timeout=timeout, **kwargs)
         return r
 
 
@@ -871,19 +897,24 @@ class TestPack(object):
         self.root = root
         self.remote = remote
 
-    def _git(self, cmd, capture_output=True, extra_env=None, **kwargs):  # pylint:disable=no-self-use
-        if capture_output:
-            call = subprocess.check_output
-        else:
-            call = subprocess.check_call
-
+    @staticmethod
+    def _git(cmd, extra_env=None, interactive=False, **kwargs):
         env = kwargs.get('env', os.environ).copy()
         if extra_env:
             env.update(extra_env)
+        if not interactive:
+            if 'stdin' not in kwargs:
+                kwargs["stdin"] = open(os.devnull, "r")
+            env['GIT_TERMINAL_PROMPT'] = b'0'
+
+        # On Windows environment variables must be bytes on 2.7 and unicode on
+        # 3.0+
+        env = {to_native_str(k): to_native_str(v) for k, v in env.items()}
 
         logger.debug('+git %s', " ".join(cmd))
 
-        return call(["git"] + cmd, env=env, **kwargs)
+        return to_unicode(
+            subprocess.check_output(["git"] + cmd, env=env, **kwargs))
 
     def get_sha(self, branch='HEAD', obj_type=None):
         if obj_type:
@@ -902,6 +933,7 @@ class TestPack(object):
             sys.stderr.write(
                 '\nTo avoid this warning add untracked files (with "git add") '
                 'or add them to .gitignore\n')
+            sys.stderr.flush()
 
         base_commit = self.get_sha(obj_type="commit")
 
@@ -923,7 +955,7 @@ class TestPack(object):
                 ['commit-tree', write_tree, '-p', base_commit, '-m',
                  "snapshot"]).strip()
 
-    def push_git_snapshot(self, branch):
+    def push_git_snapshot(self, branch, interactive=True):
         commit_sha = self.take_snapshot()
         options = ['--force']
         if not logger.isEnabledFor(logging.DEBUG):
@@ -932,8 +964,93 @@ class TestPack(object):
         self._git(
             ['push'] + options +
             [self.remote,
-             '%s:refs/heads/%s' % (commit_sha, branch)])
+             '%s:refs/heads/%s' % (commit_sha, branch)],
+            interactive=interactive)
         return commit_sha
+
+
+class RetrySession(object):
+    """
+    Emulates a requests session but with retry and timeout logic for a sequence
+    of HTTP requests.
+    """
+    def __init__(self, timeout, session=None, interval=1,
+                 logger=logging.getLogger('retry_session'),  # pylint: disable=redefined-outer-name
+                 _time=None):
+        if session is None:
+            session = requests.Session()
+        if _time is None:
+            _time = time
+
+        self._time = _time
+        self._session = session
+        self._end_time = self._time.time() + timeout
+        self._interval = interval
+        self._logger = logger
+
+    def put(self, url, data=None, **kwargs):
+        return self.request('put', url, data=data, **kwargs)
+
+    def post(self, url, data=None, json=None, **kwargs):
+        return self.request('post', url, data=data, json=json, **kwargs)
+
+    def get(self, url, params=None, **kwargs):
+        kwargs.setdefault('allow_redirects', True)
+        return self.request('get', url, params=params, **kwargs)
+
+    def request(self, method, url, timeout=None, retry=None, **kwargs):
+        last_exc_info = (None, None, None)
+        if timeout:
+            end_time = self._time.time() + timeout
+        else:
+            end_time = self._end_time
+        if retry is None:
+            # GET and PUT are idempotent
+            retry = method.lower() in ['get', 'put']
+        if not retry:
+            return self._session.request(method, url, timeout=timeout, **kwargs)
+
+        # We'll double interval below:
+        interval = self._interval / 2.
+        while True:
+            now = self._time.time()
+            if now >= end_time:
+                self._logger.warning(
+                    "Timed out making request %s %s", method, url,
+                    exc_info=last_exc_info)
+                if last_exc_info[0] is not None:
+                    raise_(last_exc_info[0], last_exc_info[1], last_exc_info[2])
+                else:
+                    raise RetryTimeout()
+
+            # We have a global timeout: we don't want any single request to
+            # take longer than 1/2 of the time remaining to allow for retries
+            kwargs.setdefault('timeout', max((end_time - now) / 2, 1))
+            response = None
+            try:
+                response = self._session.request(method, url, **kwargs)
+                # Success or 4xx client error: don't retry:
+                if response.status_code < 500:
+                    # Avoid traceback circular references:
+                    del last_exc_info
+                    return response
+                response.raise_for_status()
+            except requests.RequestException as e:
+                # Exponential backoff up to 30s
+                interval = max(
+                    self._interval,
+                    min(interval * 2, 30, end_time - time.time() - 1))
+                self._logger.info(
+                    "request %s %s failed.  Will retry in %is", method, url,
+                    interval, exc_info=True)
+                if e.response:
+                    self._logger.info('Got response %r', e.response.text)
+                last_exc_info = sys.exc_info()
+                self._time.sleep(interval)
+
+
+class RetryTimeout(requests.exceptions.Timeout):
+    pass
 
 
 try:
@@ -989,6 +1106,7 @@ try:
                     message += " during %s %s" % (
                         e.request.method, e.request.url)  # pylint:disable=no-member
                 sys.stderr.write(message + '\n')
+                sys.stderr.flush()
                 raise
             finally:
                 self.session.stbt_args.test_cases = None
@@ -1037,6 +1155,8 @@ try:
                         message += " during %s %s" % (
                             e.request.method, e.request.url)  # pylint:disable=no-member
                     die(message)
+        else:
+            die("Unauthorised")
 
         capmanager.resume_global_capture()
 
@@ -1060,6 +1180,50 @@ def named_temporary_directory(suffix='', prefix='tmp', dir=None,
 def die(message, *args):
     logger.error(message, *args)
     sys.exit(1)
+
+
+def to_bytes(text):
+    if isinstance(text, bytes):
+        return text
+    else:
+        return text.encode("utf-8", errors="backslashreplace")
+
+
+def to_unicode(text):
+    if isinstance(text, bytes):
+        return text.decode("utf-8", errors="replace")
+    else:
+        return text
+
+
+def to_native_str(text):
+    if sys.version_info.major == 2:
+        return to_bytes(text)
+    else:
+        return to_unicode(text)
+
+
+# Python 2 & 3 compatible way of raising an exception with traceback.
+# Copied from python-future so that we don't have to add a dependency.
+if sys.version_info.major == 3:
+    def raise_(tp, value, tb):  # pylint:disable=unused-argument
+        """
+        A function that matches the Python 2.x ``raise`` statement. This
+        allows re-raising exceptions with the cls value and traceback on
+        Python 2 and 3.
+        """
+        exc = value
+        if exc.__traceback__ is not tb:
+            raise exc.with_traceback(tb)
+        raise exc
+else:
+    # `raise a, b, c` is a syntax error on Python 3 (even though we don't run
+    # this block with Python 3, Python still has to parse it). Hence `exec`.
+    exec(  # pylint:disable=exec-used
+        dedent('''\
+        def raise_(tp, value=None, tb=None):
+            raise tp, value, tb
+        '''))
 
 
 if __name__ == '__main__':
