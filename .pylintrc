@@ -1,6 +1,6 @@
 [MASTER]
 persistent=no
-extension-pkg-whitelist=cv2
+extension-pkg-whitelist=cv2,numpy
 
 [REPORTS]
 msg-template={path}:{line}:{column}: [{msg_id}({symbol}), {obj}] {msg}
@@ -47,3 +47,6 @@ dummy-variables-rgx=_
 [FORMAT]
 max-line-length=80
 ignore-long-lines=https?://
+
+[IMPORTS]
+known-third-party=cv2
