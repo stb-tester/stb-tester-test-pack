@@ -13,22 +13,19 @@ class Menu(stbt.FrameObject):
 
     @property
     def is_visible(self):
-        ignore_text = stbt.MatchParameters(confirm_method="none")
         return stbt.match("menu-selection-background.png",
-                          frame=self._frame, region=self.selection_region,
-                          match_parameters=ignore_text)
+                          frame=self._frame, region=self.selection_region)
 
     @property
     def selection(self):
         return stbt.ocr(
             frame=self._frame,
             mode=stbt.OcrMode.SINGLE_LINE,
-            # Exclude the edges & corners of the button:
-            region=self.selection_region.extend(x=5, y=2, right=-5, bottom=-2))
+            region=self.selection_region)
 
     @property
     def selection_region(self):
-        return stbt.Region(x=111, y=158, right=488, bottom=207)  # Fixed focus
+        return stbt.Region(x=113, y=160, width=371, height=45)  # Fixed focus
 
     @staticmethod
     def to_home():
