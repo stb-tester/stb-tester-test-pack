@@ -1,12 +1,4 @@
-# coding:utf-8
-
 import stbt
-from stbt import wait_until
-
-
-def test_settings_network_about():
-    Menu.to_home().select("Settings", "Network", "About")
-    assert NetworkAbout().status == "Connected"
 
 
 class Menu(stbt.FrameObject):
@@ -22,7 +14,7 @@ class Menu(stbt.FrameObject):
     @property
     def is_visible(self):
         ignore_text = stbt.MatchParameters(confirm_method="none")
-        return stbt.match("images/roku/menu-selection-background.png",
+        return stbt.match("menu-selection-background.png",
                           frame=self._frame, region=self.selection_region,
                           match_parameters=ignore_text)
 
@@ -42,7 +34,8 @@ class Menu(stbt.FrameObject):
     def to_home():
         for _ in range(5):
             stbt.press("KEY_HOME")
-            menu = wait_until(Menu, predicate=lambda m: m.selection == "Home")
+            menu = stbt.wait_until(
+                Menu, predicate=lambda m: m.selection == "Home")
             if menu:
                 return menu
         assert False, "Failed to find Roku Home after pressing KEY_HOME 5 times"
@@ -83,51 +76,3 @@ class Menu(stbt.FrameObject):
             assert f.selection != original_value, (
                 "Menu.select wrapped around to %r without finding %r"
                 % (original_value, target))
-
-
-class NetworkAbout(stbt.FrameObject):
-    """The 'Settings > Network > About' screen.
-
-    For details about FrameObjects see
-    <https://stb-tester.com/manual/object-repository>
-    """
-
-    @property
-    def is_visible(self):
-        menu = Menu(frame=self._frame)
-        return menu.selection == "About"
-
-    @property
-    def status(self):
-        return self._read_text("Status")
-
-    @property
-    def connection_type(self):
-        return self._read_text("Connection type")
-
-    @property
-    def ip_address(self):
-        return self._read_text("IP address", IP_ADDRESS_PATTERN)
-
-    @property
-    def gateway(self):
-        return self._read_text("Gateway", IP_ADDRESS_PATTERN)
-
-    def _read_text(self, title, patterns=None):
-        title = stbt.match_text(
-            title, frame=self._frame,
-            region=stbt.Region(x=620, y=145, right=950, bottom=460),
-            text_color=(124, 94, 114))
-        if not title:
-            stbt.debug("NetworkAbout: Didn't find %r" % title)
-            return None
-        region = title.region.right_of().extend(x=10, y=-5, bottom=10)
-        return stbt.ocr(self._frame, region, tesseract_user_patterns=patterns)
-
-
-_octet = [r"\d", r"\d\d", r"\d\d\d"]
-IP_ADDRESS_PATTERN = [a + "." + b + "." + c + "." + d
-                      for a in _octet
-                      for b in _octet
-                      for c in _octet
-                      for d in _octet]
