@@ -1,0 +1,9 @@
+sudo: effective uid is not 0, is /usr/bin/sudo on a file system with the 'nosuid' option set or an NFS file system without root privileges?
+Using config file /var/lib/stbt/test-pack/.pylintrc
+************* Module tests.roku.pages.menu
+tests/roku/pages/menu/__init__.py:1:0: [W0401(wildcard-import), ] Wildcard import menu
+************* Module tests.roku.pages.networkabout
+tests/roku/pages/networkabout/__init__.py:1:0: [W0401(wildcard-import), ] Wildcard import networkabout
+
+-----------------------------------
+Your code has been rated at 9.71/10
