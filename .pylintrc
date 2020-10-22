@@ -27,6 +27,7 @@ disable=
   no-init,
   no-else-return,
   no-self-use,
+  protected-access,
   singleton-comparison,
   too-few-public-methods,
   too-many-ancestors,
