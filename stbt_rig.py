@@ -6,7 +6,7 @@
 For more details, and to get the latest version of this script, see
 <https://github.com/stb-tester/stbt-rig>.
 
-Copyright 2017-2019 Stb-tester.com Ltd. <support@stb-tester.com>
+Copyright 2017-2020 Stb-tester.com Ltd. <support@stb-tester.com>
 Released under the MIT license.
 """
 
@@ -14,9 +14,13 @@ from __future__ import (
     absolute_import, division, print_function, unicode_literals)
 
 import argparse
+import errno
+import fnmatch
+import hashlib
 import itertools
 import logging
 import os
+import platform
 import re
 import shutil
 import signal
@@ -326,6 +330,18 @@ RUN_ARGS = [
         sys.argv and are recorded alongside the test-results. "--tag" can be
         specified more than once."""),
 
+    Arg(("--artifacts"), action="append", dest="artifacts", default=[],
+        metavar="GLOB", help="""Select artifacts to be downloaded.  This is a
+        filename glob.  Set to `*` for all artifacts.  This argument can be
+        specified multiple times."""),
+
+    Arg(("--artifacts-dest"), default=None, metavar="PATH", help="""Artifacts
+        will be downloaded to here.  You can include the placeholders
+        {result_id}, {filename} and {basename} here to be filled in
+        automatically by stbt_rig.  Defaults to
+        {result_id}/artifacts/{filename}.  Directories will be created as
+        required."""),
+
     Arg("test_cases", nargs='+', metavar="TESTCASE",
         help="""One or more tests to run. Test names have the form
         FILENAME::FUNCTION_NAME where FILENAME is given relative to the root of
@@ -502,6 +518,11 @@ def cmd_run_body(args, node, j):
         with open(args.csv, "w") as f:
             f.write(results_csv)
 
+    if args.artifacts:
+        logger.info("Downloading artifacts...")
+        for result in results:
+            result.download_artifacts(args.artifacts, args.artifacts_dest)
+
     print("View these test results at: %s/app/#/results?filter=job:%s" % (
         node.portal.url(), job.job_uid))
 
@@ -524,13 +545,14 @@ def cmd_screenshot(args, node):
 def cmd_snapshot(args, node):
     branch_name = _get_snapshot_branch_name(node.portal)
     TestPack(remote=args.git_remote).push_git_snapshot(branch_name)
+    node.portal.notify_push()
 
 
 def _get_snapshot_branch_name(portal):
     response = portal._get("/api/v2/user")
     response.raise_for_status()
     username = response.json()["login"]
-    return "%s/snapshot" % username
+    return "refs/snapshots/%s" % username
 
 
 class NotInTestPack(Exception):
@@ -659,13 +681,82 @@ class Result(object):
         self._portal = portal
         self.json = result_json
 
+    @property
+    def result_id(self):
+        return self.json['result_id']
+
     def print_logs(self, stream=None):
         if stream is None:
             stream = sys.stdout
         response = self._portal._get(
-            '/api/v2/results%s/stbt.log' % self.json['result_id'])
+            '/api/v2/results%s/stbt.log' % self.result_id)
         response.raise_for_status()
         stream.write(response.text)
+
+    def list_artifacts(self):
+        if 'artifacts' not in self.json:
+            r = self._portal._get("/api/v2/results%s" % self.result_id)
+            r.raise_for_status()
+            self.json = r.json()
+        return self.json["artifacts"]
+
+    def download_artifacts(self, patterns=("*",), out_pattern=None):
+        if out_pattern is None:
+            if platform.system() == "Windows":
+                out_pattern = "{result_id}\\artifacts\\{filename}"
+            else:
+                out_pattern = "{result_id}/artifacts/{filename}"
+        for filename, info in self.list_artifacts().items():
+            for p in patterns:
+                if fnmatch.fnmatch(filename, p):
+                    break
+            else:
+                continue
+
+            native_filename = filename.replace('/', os.sep)
+
+            format_kwargs = {
+                "basename": os.path.basename(native_filename),
+                "filename": native_filename,
+            }
+
+            for k, v in self.json.items():
+                if isinstance(v, unicode):
+                    # Strip the leading '/' from result_id so we don't write
+                    # files to root
+                    v = v.strip('/')
+
+                    # Support Windows path separator:
+                    v = v.replace('/', os.sep)
+
+                    # Windows can't support : in filenames, so replace the : in
+                    # the ISO8601 date:
+                    if platform.system() == "Windows":
+                        v = v.replace(":", "-")
+
+                    format_kwargs[k] = v
+
+            outname = out_pattern.format(**format_kwargs)
+            self.download_artifact(filename, outname, info)
+
+    def download_artifact(self, artifact, outname, info=None):
+        # This way we can avoid downloading the same file twice if we've already
+        # downloaded it:
+        if info and _file_is_same(outname, info['size'], info['md5']):
+            logger.debug("Not Downloading %s/artifacts/%s to %s - file is "
+                         "unmodified", self.result_id, artifact, outname)
+            return
+
+        logger.debug("Downloading %s/artifacts/%s to %s",
+                     self.result_id, artifact, outname)
+        resp = self._portal._get(
+            "/api/v2/results%s/artifacts/%s" % (self.result_id, artifact),
+            stream=True)
+        resp.raise_for_status()
+        mkdir_p(os.path.dirname(outname))
+        with sponge(outname) as f:
+            for x in resp.iter_content(chunk_size=None):
+                f.write(x)
 
     def is_ok(self):
         return self.json['result'] == "pass"
@@ -684,6 +775,22 @@ class Result(object):
             raise TestError(self.json['traceback'])
         elif self.json['result'] == 'fail':
             raise TestFailure(self.json['traceback'])
+
+
+def _file_is_same(filename, size, md5sum):
+    try:
+        if os.stat(filename).st_size != size:
+            return False
+        with open(filename, "rb") as f:
+            h = hashlib.md5()
+            while True:
+                x = f.read(1024 * 1024)
+                if not x:
+                    break
+                h.update(x)
+            return h.hexdigest() == md5sum
+    except OSError:
+        return False
 
 
 class TestJob(object):
@@ -705,28 +812,24 @@ class TestJob(object):
     def __exit__(self, _1, _2, _3):
         self.stop()
 
-    def stop(self):
+    def stop(self, timeout=600):
         if self.get_status() != TestJob.EXITED:
-            self._post('/stop', retry=True).raise_for_status()
+            # Sometimes jobs take a long time to stop (uploading artifacts);
+            # in that case we get 202 Accepted after 55s to avoid other HTTP
+            # server or client timeouts.
+            # The "<job_id>/stop" endpoint is idempotent so it's safe to retry.
+            self._post('/stop', timeout=timeout, retry=True).raise_for_status()
 
     def await_completion(self, timeout=None):
-        if timeout is None:
-            timeout = 1e9  # 30 years is forever for our purposes
-        end_time = time.time() + timeout
         logger.debug("Awaiting completion of job %s", self.job_uid)
-        while True:
-            if time.time() > end_time:
-                raise TimeoutException(
-                    "Timeout waiting for job %s to complete" % self.job_uid)
-            if self.get_status(timeout=min(end_time - time.time(), 600)) != \
-                    TestJob.RUNNING:
-                logger.debug("Job complete %s", self.job_uid)
-                return
-            try:
-                self._get('/await_completion',
-                          timeout=min(end_time - time.time(), 600))
-            except requests.exceptions.Timeout:
-                pass
+        try:
+            response = self._get(
+                '/await_completion', retry=True, timeout=timeout)
+            response.raise_for_status()
+            logger.debug("Job complete %s", self.job_uid)
+        except requests.exceptions.Timeout:
+            raise TimeoutException(
+                "Timeout waiting for job %s to complete" % self.job_uid)
 
     def list_results(self):
         r = self.portal._get(
@@ -736,7 +839,8 @@ class TestJob(object):
 
     def list_results_xml(self):
         r = self.portal._get(
-            '/api/v2/results.xml', params={'filter': 'job:%s' % self.job_uid})
+            '/api/v2/results.xml', params={'filter': 'job:%s' % self.job_uid,
+                                           'include_tz': 'true'})
         r.raise_for_status()
         return r.text
 
@@ -867,6 +971,9 @@ class Portal(object):
             job.await_completion(timeout=timeout)
             return job
 
+    def notify_push(self):
+        self._post("/github/post-receive").raise_for_status()
+
     def _get(self, endpoint, timeout=60, **kwargs):
         return self._session.get(self.url(endpoint), timeout=timeout, **kwargs)
 
@@ -948,25 +1055,58 @@ class TestPack(object):
                 ['write-tree'],
                 extra_env={'GIT_INDEX_FILE': tmp_index}).strip()
 
-        if self.get_sha(obj_type="tree") == write_tree:
-            return base_commit
+        head = self._git(["rev-parse", "--symbolic-full-name", "HEAD"]).strip()
+        remoteref = self._git(
+            ["for-each-ref",
+             "--format=%(push:remoteref)\n%(upstream:remoteref)\n",
+             head]).split('\n')
+        if remoteref and remoteref[0]:
+            # push:remoteref set if the repo is configured to push to a
+            # different place from which it fetches
+            remoteref = remoteref[0]
+        elif len(remoteref) > 1 and remoteref[1]:
+            # upstream:remoteref will be set otherwise, assuming we've actually
+            # got a remote tracking branch.
+            remoteref = remoteref[1]
         else:
-            return self._git(
-                ['commit-tree', write_tree, '-p', base_commit, '-m',
-                 "snapshot"]).strip()
+            remoteref = ""
+
+        no_workingdir_changes = (self.get_sha(obj_type="tree") == write_tree)
+        if no_workingdir_changes:
+            # No changes, we still want a new commit so we can inform the portal
+            # which branch we're working on.  We copy over the author date and
+            # committer date so we'll get the same SHA every time.  This will
+            # cut down on push time and object pollution.
+            ad, cd = self._git(
+                ["show", base_commit, "--no-patch",
+                 "--format=%ad\n%cd"]).split('\n')[:2]
+            extra_env = {"GIT_AUTHOR_DATE": ad, "GIT_COMMITTER_DATE": cd}
+        else:
+            extra_env = {}
+
+        commit_sha = self._git(
+            ['commit-tree', write_tree, '-p', base_commit, '-m',
+             "snapshot\n\nremoteref: %s" % remoteref],
+            extra_env=extra_env).strip()
+
+        if no_workingdir_changes:
+            return commit_sha, base_commit
+        else:
+            return commit_sha, commit_sha
 
     def push_git_snapshot(self, branch, interactive=True):
-        commit_sha = self.take_snapshot()
+        commit_sha, run_sha = self.take_snapshot()
         options = ['--force']
         if not logger.isEnabledFor(logging.DEBUG):
             options.append('--quiet')
-        logger.info("Pushing git snapshot to %s/%s", self.remote, branch)
+        logger.info("Pushing git snapshot %s to %s:%s",
+                    commit_sha[:7], self.remote, branch)
         self._git(
             ['push'] + options +
             [self.remote,
-             '%s:refs/heads/%s' % (commit_sha, branch)],
+             '%s:%s' % (commit_sha, branch)],
             interactive=interactive)
-        return commit_sha
+        return run_sha
 
 
 class RetrySession(object):
@@ -1000,7 +1140,7 @@ class RetrySession(object):
 
     def request(self, method, url, timeout=None, retry=None, **kwargs):
         last_exc_info = (None, None, None)
-        if timeout:
+        if timeout is not None:
             end_time = self._time.time() + timeout
         else:
             end_time = self._end_time
@@ -1024,17 +1164,31 @@ class RetrySession(object):
                     raise RetryTimeout()
 
             # We have a global timeout: we don't want any single request to
-            # take longer than 1/2 of the time remaining to allow for retries
-            kwargs.setdefault('timeout', max((end_time - now) / 2, 1))
+            # take longer than 1/2 of the time remaining to allow for retries.
+            #
+            # We also place a limit of 60s.  Requests to the portal should
+            # time-out in less time than this anyway.  The risk of a longer
+            # timeout is that the connection gets dropped silently by a some
+            # middlebox and we wait for ages when we're never going to get a
+            # response.
+            timeout = min(60, max((end_time - now) / 2, 1))
+            kwargs.setdefault('timeout', timeout)
             response = None
             try:
                 response = self._session.request(method, url, **kwargs)
-                # Success or 4xx client error: don't retry:
-                if response.status_code < 500:
+                if response.status_code == 202:
+                    # We return 202 "Accepted" from our endpoints indicating
+                    # that we've started the requested operation, but haven't
+                    # finished yet.  Typically this is used for long-poll.  It's
+                    # the equivalent to a syscall returning EAGAIN.
+                    pass
+                elif response.status_code < 500:
                     # Avoid traceback circular references:
                     del last_exc_info
+                    # Success or 4xx client error: don't retry
                     return response
-                response.raise_for_status()
+                else:
+                    response.raise_for_status()
             except requests.RequestException as e:
                 # Exponential backoff up to 30s
                 interval = max(
@@ -1069,29 +1223,49 @@ try:
 
     def pytest_collect_file(path, parent):
         if path.ext == ".py":
-            return StbtCollector(path, parent)
+            if hasattr(StbtCollector, "from_parent"):
+                # pytest >v5.4
+                return StbtCollector.from_parent(parent=parent, fspath=path)  # pylint:disable=no-member
+            else:
+                # Backwards compat
+                # https://docs.pytest.org/en/stable/deprecations.html#node-construction-changed-to-node-from-parent
+                return StbtCollector(path, parent)
         else:
             return None
 
 
     class StbtCollector(pytest.File):
+        # pylint: disable=abstract-method
         def collect(self):
-            with open(self.name) as f:
+            with open(self.fspath.strpath) as f:
                 # We implement our own parsing to avoid import stbt ImportErrors
-                for line in f:
+                for n, line in enumerate(f):
                     m = re.match(r'^def\s+(test_[a-zA-Z0-9_]*)', line)
                     if m:
-                        yield StbtRemoteTest(self, self.name, m.group(1))
+                        if hasattr(StbtRemoteTest, "from_parent"):
+                            # pytest >v5.4
+                            srt = StbtRemoteTest.from_parent(  # pylint:disable=no-member
+                                parent=self, filename=self.name,
+                                testname=m.group(1), line_number=n + 1)
+                        else:
+                            # Backwards compat
+                            # https://docs.pytest.org/en/stable/deprecations.html#node-construction-changed-to-node-from-parent
+                            srt = StbtRemoteTest(
+                                self, self.name, m.group(1), n + 1)
+                        yield srt
 
 
     class StbtRemoteTest(pytest.Item):
-        def __init__(self, parent, filename, testname):
+        # pylint: disable=abstract-method
+        def __init__(self, parent, filename, testname, line_number):
             super(StbtRemoteTest, self).__init__(testname, parent)
             self._filename = filename
             self._testname = testname
+            self._line_number = line_number
 
         def __repr__(self):
-            return "StbtRemoteTest(%r, %r)" % (self._filename, self._testname)
+            return "StbtRemoteTest(%r, %r, %r)" % (
+                self._filename, self._testname, self._line_number)
 
         def runtest(self):
             j = self.session.stbt_run_prep
@@ -1111,6 +1285,8 @@ try:
             finally:
                 self.session.stbt_args.test_cases = None
 
+        def reportinfo(self):
+            return self.fspath, self._line_number, ""
 
     class Args(object):
         """Pretends to be the result of calling `argparser` `parse_args` so we
@@ -1133,7 +1309,11 @@ try:
         session.stbt_args = args
         resolve_args(session.stbt_args)
 
-        capmanager = session.config.pluginmanager.getplugin('capturemanager')
+        pluginmanager = session.config.pluginmanager
+        if not session.config.option.collectonly:
+            pluginmanager.unregister(name="python")
+
+        capmanager = pluginmanager.getplugin('capturemanager')
         capmanager.suspend_global_capture(in_=True)
         for portal_auth_token in iter_portal_auth_tokens(
                 args.portal_url, args.portal_auth_file, args.mode):
@@ -1177,6 +1357,50 @@ def named_temporary_directory(suffix='', prefix='tmp', dir=None,
         shutil.rmtree(dirname, ignore_errors=ignore_errors)
 
 
+try:
+    replace = os.replace
+except AttributeError:
+    if platform.system() == "Windows":
+        replace = None
+    else:
+        replace = os.rename
+
+
+@contextmanager
+def sponge(filename):
+    if not replace:
+        # Can't be atomic on Windows with Python <v3.3.  Oh well.
+        with open(filename, "wb") as f:
+            yield f
+        return
+
+    # pylint: disable=bad-continuation
+    with tempfile.NamedTemporaryFile(
+            dir=os.path.dirname(filename), prefix=os.path.basename(filename),
+            suffix='~', delete=False) as f:
+        try:
+            yield f
+            f.close()
+            replace(f.name, filename)
+        except:
+            os.remove(f.name)
+            raise
+
+
+def mkdir_p(d):
+    """Python 3.2 has an optional argument to os.makedirs called exist_ok.  To
+    support older versions of python we can't use this and need to catch
+    exceptions"""
+    try:
+        os.makedirs(d)
+    except OSError as e:
+        if e.errno == errno.EEXIST and os.path.isdir(d) \
+                and os.access(d, os.R_OK | os.W_OK):
+            return
+        else:
+            raise
+
+
 def die(message, *args):
     logger.error(message, *args)
     sys.exit(1)
@@ -1216,6 +1440,8 @@ if sys.version_info.major == 3:
         if exc.__traceback__ is not tb:
             raise exc.with_traceback(tb)
         raise exc
+
+    unicode = str
 else:
     # `raise a, b, c` is a syntax error on Python 3 (even though we don't run
     # this block with Python 3, Python still has to parse it). Hence `exec`.
