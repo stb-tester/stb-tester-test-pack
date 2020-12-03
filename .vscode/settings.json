@@ -1,0 +1,27 @@
+{
+    "python.linting.pylintEnabled": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintArgs": ["--load-plugins=stbt.pylint_plugin"],
+
+    "runOnSave.commands": [
+        {
+            "match": ".*\\.py$",
+            "command": "${workspaceFolder}/.venv/bin/python -m stbt_rig -v snapshot",
+            "runIn": "terminal",
+            "runningStatusMessage": "Running stbt_rig snapshot...",
+            "finishStatusMessage": "Snapshot complete"
+        }
+    ],
+
+    "python.testing.pytestArgs": [
+        "-p", "stbt_rig", "--node-id=stb-tester-123456789abc",
+        "--override-ini=python_files=*.py",
+        "--override-ini=python_functions=test_*",
+        "--tb=no", "--capture=no",
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.pytestEnabled": true
+}
+
