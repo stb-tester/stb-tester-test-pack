@@ -1,3 +1,6 @@
+.env
+.pytest_cache/
 .venv/
+.vscode/
 *.pyc
-stbt-debug
+stbt-debug/
