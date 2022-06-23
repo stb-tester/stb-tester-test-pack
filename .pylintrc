@@ -1,11 +1,13 @@
 [MASTER]
 persistent=no
 extension-pkg-whitelist=cv2,numpy
+ignore=stbt_rig.py
 
 [REPORTS]
 msg-template={path}:{line}:{column}: [{msg_id}({symbol}), {obj}] {msg}
 output-format=colorized
 reports=no
+score=no
 
 [MESSAGES CONTROL]
 disable=
@@ -14,20 +16,28 @@ disable=
   bad-mcs-method-argument,
   bad-option-value,
   blacklisted-name,
+  consider-using-dict-items,
+  consider-using-f-string,
   duplicate-code,
   empty-docstring,
   global-statement,
+  import-outside-toplevel,
   inconsistent-return-statements,
   invalid-name,
+  len-as-condition,
   locally-disabled,
   locally-enabled,
   misplaced-comparison-constant,
   missing-docstring,
   multiple-statements,
   no-init,
+  no-else-break,
+  no-else-continue,
+  no-else-raise,
   no-else-return,
   no-self-use,
   protected-access,
+  raise-missing-from,
   singleton-comparison,
   too-few-public-methods,
   too-many-ancestors,
@@ -37,6 +47,7 @@ disable=
   too-many-instance-attributes,
   too-many-lines,
   too-many-locals,
+  too-many-nested-blocks,
   too-many-public-methods,
   too-many-return-statements,
   too-many-statements,
