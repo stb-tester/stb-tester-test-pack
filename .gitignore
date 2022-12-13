@@ -1,6 +1,7 @@
+*.pyc
 .env
 .pytest_cache/
 .venv/
 .vscode/
-*.pyc
+__pycache__/
 stbt-debug/
