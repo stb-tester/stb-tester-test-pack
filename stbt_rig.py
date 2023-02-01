@@ -6,7 +6,7 @@
 For more details, and to get the latest version of this script, see
 <https://stb-tester.com/manual/stbt-rig>.
 
-Copyright 2017-2020 Stb-tester.com Ltd. <support@stb-tester.com>
+Copyright 2017-2022 Stb-tester.com Ltd. <support@stb-tester.com>
 Released under the MIT license.
 """
 
@@ -72,6 +72,9 @@ def main(argv=None):
     if hasattr(signal, "SIGHUP"):
         signal.signal(signal.SIGHUP, _exit)  # pylint:disable=no-member
 
+    if args.command == "setup" and args.verbosity == 0:
+        args.verbosity = 1
+
     logging.basicConfig(
         format="%(filename)s: %(levelname)s: %(message)s",
         level=logging.WARNING - args.verbosity * 10)
@@ -89,6 +92,8 @@ def resolve_args(args):
             args.mode = "jenkins"
         elif "bamboo_agentWorkingDirectory" in os.environ:
             args.mode = "bamboo"
+        elif "GITLAB_CI" in os.environ:
+            args.mode = "gitlab"
         else:
             args.mode = "interactive"
 
@@ -117,6 +122,8 @@ def main_with_args(args):
             return cmd_run(args, node)
         elif args.command == "download":
             return cmd_download(args, portal)
+        elif args.command == "encrypt-secret":
+            return cmd_encrypt_secret(args, portal)
         elif args.command == "screenshot":
             return cmd_screenshot(args, node)
         elif args.command == "snapshot":
@@ -223,11 +230,12 @@ ARGS = [
         to push temporary snapshots to git: that is, "run" and "press" when
         "--mode=interactive"."""),
 
-    Arg("--mode", choices=["auto", "bamboo", "interactive", "jenkins"],
+    Arg("--mode",
+        choices=["auto", "bamboo", "gitlab", "interactive", "jenkins"],
         default="auto",
         help="""See <https://stb-tester.com/manual/stbt-rig#interactive-mode>.
         This defaults to "auto", which detects whether or not it is being run
-        inside Jenkins or Bamboo.""", cmdline_only=True),
+        inside Bamboo/GitLab/Jenkins.""", cmdline_only=True),
 
     Arg("--csv", metavar="FILENAME",
         help="Also write test-results in CSV format to the specified file."),
@@ -245,9 +253,9 @@ RUN_ARGS = [
     Arg("--test-pack-revision", metavar="GIT_SHA", help="""Git commit SHA in
         the test-pack repository identifying the version of the tests to run.
         Can also be the name of a git branch or tag. In interactive mode this
-        defaults to a snapshot of your current working directory. In jenkins
-        mode this defaults to the test-pack repository's default branch
-        (typically "main")."""),
+        defaults to a snapshot of your current working directory. In
+        bamboo/gitlab/jenkins mode this defaults to the test-pack repository's
+        default branch (typically "main")."""),
 
     Arg("--remote-control", metavar="NAME", help="""The remote control infrared
         configuration to use when running the tests. This should match the name
@@ -259,8 +267,8 @@ RUN_ARGS = [
 
     Arg("--category", metavar="NAME", help="""Category to save the test-results
         in. When you are viewing test results you can filter by this string. In
-        interactive mode this defaults to the branch name. In jenkins mode
-        this defaults to the Jenkins job name."""),
+        interactive mode this defaults to the branch name. In
+        bamboo/gitlab/jenkins mode this defaults to the CI job name."""),
 
     Arg("--soak", action="store_true", help="""Run the testcases forever until
         you interrupt them by pressing Control-C.""", cmdline_only=True),
@@ -287,8 +295,10 @@ RUN_ARGS = [
         required."""),
 
     Arg("--junit-xml", action="append", dest="junit_xml", default=[],
-        help="""Save JUnit style XML file with results to this path.  This is
-        enabled by default in jenkins or bamboo mode.""", cmdline_only=True),
+        help="""Save test-results in JUnit XML format to this filename. In
+        bamboo/gitlab/jenkins mode this is enabled by default, with the
+        filename 'stbt-results.xml'.""",
+        cmdline_only=True),
 
     Arg("test_cases", nargs='+', metavar="TESTCASE",
         help="""One or more tests to run. Test names have the form
@@ -318,10 +328,10 @@ def argparser():
         "run", help="Run testcases",
         description="""Run the specified testcases on the specified Stb-tester
         node. In interactive mode (the default mode if not running inside a
-        Jenkins job) it also pushes a snapshot of your current test-pack and
-        pushes it to the branch "@YOUR_USERNAME's snapshot" on the Stb-tester
-        Portal, so that you don't have to make lots of temporary git commits to
-        debug your test scripts.""")
+        Bamboo/GitLab/Jenkins job) it also pushes a snapshot of your current
+        test-pack and pushes it to the branch "@YOUR_USERNAME's snapshot" on
+        the Stb-tester Portal, so that you don't have to make lots of temporary
+        git commits to debug your test scripts.""")
 
     for arg in RUN_ARGS:
         arg.add(run_parser)
@@ -346,6 +356,12 @@ def argparser():
         as given to the REST API (/api/v2/results) or the interactive
         test-results view in the Stb-tester Portal -- see
         <https://stb-tester.com/manual/user-interface-reference#filter>.''')
+
+    encrypt_secret_parser = subcommands.add_parser(
+        "encrypt-secret", help="Write encrypted value to config file")
+    encrypt_secret_parser.add_argument(
+        "name", help="Name that can be used to retrieve the secret")
+    encrypt_secret_parser.add_argument("value", help="Value to be encrypted")
 
     screenshot_parser = subcommands.add_parser(
         "screenshot", help="Save a screenshot to disk",
@@ -402,7 +418,7 @@ def cmd_run_prep(args, portal):
         elif args.mode == "pytest":
             commit_sha = TestPack(remote=args.git_remote) \
                          .push_git_snapshot(branch_name, interactive=False)
-        elif args.mode in ["bamboo", "jenkins"]:
+        elif args.mode in ["bamboo", "gitlab", "jenkins"]:
             # We assume that when in CI we're not in the git repo of the
             # test-pack, so run tests from main.
             commit_sha = "HEAD"
@@ -418,6 +434,8 @@ def cmd_run_prep(args, portal):
             category = os.environ["JOB_NAME"]
         elif args.mode == "bamboo":
             category = os.environ["bamboo_shortJobName"]
+        elif args.mode == "gitlab":
+            category = os.environ["CI_JOB_NAME"]
         else:
             assert False, "Unreachable: Unknown mode %r" % args.mode
 
@@ -445,6 +463,20 @@ def cmd_run_prep(args, portal):
             value = os.environ.get(v.replace(".", "_"))
             if value:
                 tags[v] = value
+    elif args.mode == "gitlab":
+        # Record gitlab CI variables as Stb-tester tags.
+        # https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
+        for v in ["CI_COMMIT_REF_NAME",
+                  "CI_COMMIT_SHA",
+                  "CI_ENVIRONMENT_NAME",
+                  "CI_JOB_ID",
+                  "CI_JOB_NAME",
+                  "CI_JOB_STAGE",
+                  "CI_JOB_URL",
+                  "CI_PROJECT_URL",
+                  "CI_REPOSITORY_URL"]:
+            if os.environ.get(v):
+                tags["gitlab/%s" % v] = os.environ[v]
     for tag in args.tags:
         try:
             name, value = tag.split("=", 1)
@@ -483,7 +515,7 @@ def cmd_run_body(args, node, j):
             print("")
             print(result.json["triage_url"])
             result.print_logs()
-    elif args.mode in ["bamboo", "jenkins"]:
+    elif args.mode in ["bamboo", "gitlab", "jenkins"]:
         # Record results in XML format for the Jenkins JUnit plugin
         if not args.junit_xml:
             args.junit_xml = ["stbt-results.xml"]
@@ -524,6 +556,76 @@ def cmd_download(args, portal):
         result.download_artifacts(args.artifacts or ["*"], args.artifacts_dest)
 
 
+def cmd_encrypt_secret(args, portal):
+    import base64
+
+    pubkey = portal.get_secrets_pubkey()
+    try:
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(pubkey.encode())
+        cmd = ["openssl", "pkeyutl", "-inkey", f.name, "-pubin", "-encrypt"]
+        proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        encrypted, _ = proc.communicate(args.value.encode("utf-8"))
+        if proc.wait() != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd, encrypted)
+    finally:
+        # Windows can't open a file that's already open - so we close it above,
+        # but only delete it here.
+        os.unlink(f.name)
+    encoded = base64.b64encode(encrypted).decode("utf-8")
+
+    with open("%s/.stbt.conf" % find_test_pack_root()) as f:
+        cfg = list(f)
+    _modify_config(cfg, "encrypted_secrets", args.name, encoded)
+    with open("%s/.stbt.conf" % find_test_pack_root(), "w") as f:
+        f.write("".join(cfg))
+
+    sys.stderr.write(
+        "Encrypted and added the secret to your stbt.conf.  The unencrypted "
+        "secret can be read during a test run with:\n"
+        "\n"
+        "    stbt.get_config('secrets', %r)\n" % args.name)
+    return 0
+
+
+def _modify_config(cfg, section, key, value):
+    section_start = None
+
+    cfg_line = "%s = %s\n" % (key, value)
+
+    for n, line in enumerate(cfg):
+        if re.match(r"\s*\[\s*%s\s*\]" % re.escape(section), line):
+            section_start = n
+            if not line.endswith("\n"):
+                cfg[n] = line + "\n"
+            break
+
+    if section_start is None:
+        cfg.extend(["\n", "[%s]\n" % section, cfg_line])
+        return
+
+    for n, line in enumerate(cfg[section_start + 1:], section_start + 1):
+        if re.match(re.escape(key) + r"\s*=", line):
+            cfg[n] = cfg_line
+            return
+
+        # Preserve alphabetical order:
+        keyname = line.strip().split("=")[0].strip()
+        if keyname > key or line.strip().startswith("["):
+            section_end = n
+            break
+    else:
+        section_end = len(cfg)
+
+    # Backtrack to find insertion point:
+    for section_end in range(section_end, section_start, -1):
+        prevline = cfg[section_end - 1].strip()
+        if prevline and not prevline.startswith('#'):
+            break
+    cfg.insert(section_end, cfg_line)
+
+
 def cmd_screenshot(args, node):
     node.save_screenshot(args.filename)
     return 0
@@ -550,7 +652,10 @@ def cmd_setup(args, node_id):
 def setup_stage1(this_stbt_rig, root):
     _, config_parser = read_stbt_conf(root)
     stbt_version = int(config_parser.get("test_pack", "stbt_version"))
-    python_version = config_parser.get("test_pack", "python_version")
+    if stbt_version >= 33:
+        python_version = "3"
+    else:
+        python_version = config_parser.get("test_pack", "python_version")
 
     if python_version != "3":
         sys.stderr.write(
@@ -585,7 +690,8 @@ def setup_stage1(this_stbt_rig, root):
                     break
 
     if not os.path.exists(venv_dir):
-        # Create .venv
+        logging.info("Creating virtualenv in '%s' with Python %s",
+                     venv_dir, system_python_version)
         subprocess.check_call(system_python_exe + ['-m', 'venv', '.venv'],
                               cwd=root)
 
@@ -623,13 +729,14 @@ def setup_stage1(this_stbt_rig, root):
         pip_deps.append("stb-tester~=32.2")
     else:
         pip_deps.append("stb-tester~=%s.0" % (stbt_version,))
+        pip_deps.append("stbt_core~=%s.0" % (stbt_version,))
 
     python = _venv_exe("python", root=root)
     subprocess.check_call(
         [python, "-m", "pip", 'install', '--upgrade', 'pip'],
         cwd=root)
     subprocess.check_call(
-        [python, "-m", "pip", 'install'] + pip_deps, cwd=root)
+        [python, "-m", "pip", 'install', '--upgrade'] + pip_deps, cwd=root)
 
     os.environ["STBT_RIG_SECOND_STAGE"] = "1"
 
@@ -700,13 +807,9 @@ def setup_stage2(this_stbt_rig, root, args, node_id):
                     "%r is not a valid number, please enter a value "
                     "between 1 and %i\n" % (node_no, len(nodes)))
                 continue
-        if node_id not in nodes:
-            sys.stderr.write(
-                "%r is not a node attached to this portal.  Try again.\n" %
-                node_id)
 
     sys.stderr.write(
-        "Node %s will be used by default.  Edit .env to change\n" % node_id)
+        "Node %s will be used by default. Edit '.env' to change.\n" % node_id)
 
     updates = {}
     updates[b"STBT_NODE_ID"] = node_id.encode("utf-8")
@@ -759,9 +862,17 @@ def _update_vscode_config():
     import json
 
     VS_CODE_CONFIG = {
-        "python.linting.pylintEnabled": True,
+        "git.autoStash": True,
+        "git.closeDiffOnOperation": True,
+        "git.fetchOnPull": True,
+        "git.pruneOnFetch": True,
+        "git.pullBeforeCheckout": True,
+        "python.envFile": "${workspaceFolder}/.env",
         "python.linting.enabled": True,
+        "python.linting.mypyEnabled": False,
+        "python.testing.nosetestsEnabled": False,
         "python.linting.pylintArgs": ["--load-plugins=_stbt.pylint_plugin"],
+        "python.linting.pylintEnabled": True,
         "python.testing.pytestArgs": [
             "-p", "stbt_rig",
             "-p", "no:python",
@@ -770,6 +881,8 @@ def _update_vscode_config():
             "--tb=no", "--capture=no",
             "tests"
         ],
+        "python.testing.pytestEnabled": True,
+        "python.testing.unittestEnabled": False,
         # This requires the "pucelle.run-on-save" VSCode extension:
         "runOnSave.commands": [
             {
@@ -781,12 +894,7 @@ def _update_vscode_config():
                 "runningStatusMessage": "Running stbt_rig snapshot...",
                 "finishStatusMessage": "Snapshot complete"
             }
-        ],
-        "python.testing.unittestEnabled": False,
-        "python.testing.nosetestsEnabled": False,
-        "python.testing.pytestEnabled": True,
-        "python.linting.mypyEnabled": False,
-        "python.envFile": "${workspaceFolder}/.env"
+        ]
     }
     try:
         with open(".vscode/settings.json") as f:
@@ -916,17 +1024,19 @@ class PortalAuthTokensAdapter(HTTPAdapter):
             yield token
             return
         elif self.mode == "jenkins":
-            die("No access token specified. Use the Jenkins Credentials "
-                "Binding plugin to provide the access token in the "
+            die("No access token for the Stb-tester Portal. Use the Jenkins "
+                "Credentials Binding plugin to provide the access token in the "
                 "environment variable STBT_AUTH_TOKEN")
-
-        if self.mode == "bamboo":
+        elif self.mode == "gitlab":
+            die("No access token for the Stb-tester Portal. Specify the "
+                "access token in the environment variable STBT_AUTH_TOKEN")
+        elif self.mode == "bamboo":
             token = os.environ.get("bamboo_STBT_AUTH_PASSWORD")
             if token:
                 yield token
             else:
-                die("No access token specified. Provide the access token in "
-                    "the variable bamboo.STBT_AUTH_PASSWORD")
+                die("No access token for the Stb-tester Portal. Specify the "
+                    "access token in the variable bamboo.STBT_AUTH_PASSWORD")
             return
 
         assert self.mode in ["interactive", "pytest"], \
@@ -935,21 +1045,24 @@ class PortalAuthTokensAdapter(HTTPAdapter):
         keyring = None
         try:
             import keyring
-            out = keyring.get_password(self.portal_url, "stb-tester")
-            if out:
-                yield out
+            token = keyring.get_password(self.portal_url, "stb-tester")
+            if token:
+                yield token
         except ImportError:
             sys.stderr.write(
-                "Install the python keyring package so you don't need to "
+                "Install the python \"keyring\" package so you don't need to "
                 "enter your API token every time\n")
+
+        if self.mode == "pytest":
+            die("%s access token for portal %s. "
+                "Run 'py stbt_rig.py setup --vscode'."
+                % ("Invalid" if token else "No",
+                   self.portal_url,))
 
         while True:
             token = ask('Enter Access Token for portal %s: ' % self.portal_url)
             if not token:
-                # EOF
-                sys.stderr.write("EOF!\n")
-                sys.stderr.flush()
-                break
+                continue
             token = token.strip()
             if token:
                 if keyring is not None:
@@ -1371,6 +1484,11 @@ class Portal(object):
         r = self._get("/api/v2/results", params={"filter": filter})
         r.raise_for_status()
         return [Result(self, x) for x in r.json()]
+
+    def get_secrets_pubkey(self):
+        resp = self._get("/api/v2/secrets.pub.pem")
+        resp.raise_for_status()
+        return resp.text
 
     def _get(self, endpoint, timeout=60, **kwargs):
         return self._session.get(self.url(endpoint), timeout=timeout, **kwargs)
